@@ -1,0 +1,162 @@
+---
+title: "reproducible-research-project2"
+author: "Jin Yong Kim"
+date: "25 October 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Health and Economic Impact of Weather Events in the US
+
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+## Preparation
+
+The analysis on the storm event database revealed that tornadoes was the most dangerous weather event to the population health. The second most dangerous event type is the excessive heat. The economic impact of weather events was also analyzed. Flash floods and thunderstorm winds caused billions of dollars in property damages between 1950 and 2011. The largest crop damage caused by drought, followed by flood, ice storms and hails.
+
+The first step is to download the data file. Then change over to that directory that the downloaded file is and read the same.
+
+```{r}
+setwd("C:/Test/repdata")
+library(plyr)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+```
+
+```{r}
+stormData <- read.csv('repdata%2Fdata%2FStormData.csv')
+```
+
+## Data transformations for cleaning up
+Before the analysis, the data need some preprocessing. Event types don't have a specific format. For instance, there are events with types  Frost/Freeze, FROST/FREEZE and FROST\\FREEZE which obviously refer to the same type of event.
+```{r}
+# number of unique event types
+length(unique(stormData$EVTYPE))
+```
+
+```{r}
+# translate all letters to uppercase
+eventTypes <- toupper(stormData$EVTYPE)
+# replace all punct. characters with a space
+eventTypes <- gsub("[[:blank:][:punct:]+]", " ", eventTypes)
+eventTypes<-gsub("^ ","",eventTypes)
+length(unique(eventTypes))
+```
+
+```{r}
+eventTypes<-gsub("^ *| $*","",eventTypes) # Remove leading & trailing spaces
+eventTypes<-gsub("  "," ",eventTypes) #Flush out in-between extra spaces
+
+
+# update the data frame
+stormData$EVTYPE <- eventTypes
+```
+
+## Types of events that are most harmful to Population Health
+```{r}
+library(plyr)
+casualties <- ddply(stormData, .(EVTYPE), summarize,
+                    sFatalities = sum(FATALITIES),
+                    sInjuries = sum(INJURIES))
+```
+```{r}
+# Find events that caused most death and injury
+fatalEvents <- head(casualties[order(casualties$sFatalities, decreasing = T), ], 10)
+
+#plot.new()
+
+par(mai=c(1,1,1,0),mgp=c(3,0,0))
+
+barplot(fatalEvents$sFatalities,names.arg = fatalEvents$EVTYPE,horiz=TRUE,xlab="Caualties",main="Events with top 10 fatalities",ylab="Event Types",las=1,border="blue",col="red",cex.names=0.5,xlim=c(0,5^5.5))
+```
+
+Top 10 events that caused most number of injuries are
+```{r}
+injuryEvents <- head(casualties[order(casualties$sInjuries, decreasing = T), ], 10)
+
+#plot.new()
+
+par(mai=c(1,1.5,1,1),mgp=c(3,0,0))
+
+barplot(injuryEvents$sInjuries,names.arg = injuryEvents$EVTYPE,horiz=TRUE,xlab="Caualties",main="Events with top 10 Injuries",ylab="Event Types",las=1,border="blue",col="red",cex.names=0.5,xlim=c(0,10^5))
+```
+
+## Types of events that have the greatest Economic consequences
+```{r}
+transformExp <- function(e) {
+    # h -> hundred, k -> thousand, m -> million, b -> billion
+    if (e %in% c('h', 'H'))
+        return(2)
+    else if (e %in% c('k', 'K'))
+        return(3)
+    else if (e %in% c('m', 'M'))
+        return(6)
+    else if (e %in% c('b', 'B'))
+        return(9)
+    else if (!is.na(as.numeric(e))) # if a digit
+        return(as.numeric(e))
+    else if (e %in% c('', '-', '?', '+'))
+        return(0)
+    else {
+        stop("Invalid exponent value.")
+    }
+}
+```
+```{r}
+propertyDamageExp <- sapply(stormData$PROPDMGEXP, FUN=transformExp)
+stormData$PROPDMGCOST <- stormData$PROPDMG * (10 ** propertyDamageExp)
+cropDamageExp <- sapply(stormData$CROPDMGEXP, FUN=transformExp)
+stormData$CROPDMGCOST <- stormData$CROPDMG * (10 ** cropDamageExp)
+```
+```{r}
+library(plyr)
+economicLoss <- ddply(stormData, .(EVTYPE), summarize,
+                      sPropDamage = sum(PROPDMGCOST),
+                      sCropDamage = sum(CROPDMGCOST),
+                      sPropAndCropDamage=sum(PROPDMGCOST+CROPDMGCOST))
+```
+Top 10 events that caused most property damage (in dollars) are as follows
+```{r}
+costlyEvents <- head(economicLoss[order(economicLoss$sPropDamage, decreasing = T), ], 10)
+
+#plot.new()
+
+par(mai=c(1,1.5,1,1),mgp=c(3,0,0))
+
+barplot(costlyEvents$sPropDamage/(10^9),names.arg = costlyEvents$EVTYPE,horiz=TRUE,xlab="Damages",main="Events with top 10 Costly Property Damages(in billions)",ylab="Events",las=1,border="blue",col="red",cex.names=0.5,xlim=c(0,5^7.1))
+```
+Similarly, the events that caused biggest crop damages in terms of dollars are
+```{r}
+costlyEvents <- head(economicLoss[order(economicLoss$sCropDamage, decreasing = T), ], 10)
+
+#plot.new()
+
+par(mai=c(1,1.5,1,1),mgp=c(3,0,0))
+
+barplot(costlyEvents$sCropDamage/10^7,names.arg = costlyEvents$EVTYPE,horiz=TRUE,xlab="Damages",main="Events with top 10 Costly Crop Damages(in millions)",ylab="Events",las=1,border="blue",col="red",cex.names=0.5,xlim=c(0,5^4.6))
+```
+Let us look at the events that had caused maximum damages in terms of property and crop. The following plot provides this information:
+```{r}
+costlyEvents <- head(economicLoss[order(economicLoss$sPropAndCropDamage, decreasing = T), ], 10)
+
+#plot.new()
+
+par(mai=c(1,1.5,1,1),mgp=c(3,0,0))
+
+barplot(costlyEvents$sPropAndCropDamage/10^9,names.arg = costlyEvents$EVTYPE,horiz=TRUE,xlab="Damages",main="Events with top 10 Costly Damages(in billions)",ylab="Events",las=1,border="blue",col="red",cex.names=0.5,xlim=c(0,5^7.1))
+```
+
+## Conclusion
+The data shows that, between 1950 and 2011 flash floods and thunderstorm winds caused maximum property damages among weather-related natural disasters.
+
+More data cleansing is needed. For example, information related to 'floodand 'flash flood, or, 'thunderstormandthstm` are aggregated separately. When cleansed the total damage against flood or thunderstorm will become more accurate.
+
+Tornado, flooding and drought caused severe injuries. More fatalities have been reported after tornado and during drought, an excessive heat condition.
+
+The most severe weather event in terms of crop damage is the drought. In the last half century, the drought has caused more than 10 billion dollars 
